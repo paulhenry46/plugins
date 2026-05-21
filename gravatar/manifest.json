@@ -1,11 +1,13 @@
 {
   "id": "gravatar",
   "name": "Gravatar Avatars",
-  "version": "1.2.1",
+  "version": "1.3.1",
   "author": "Bulwark Mail Community",
   "description": "Resolves Gravatar profile pictures for email contacts via the avatar transform hook",
   "type": "hook",
-  "permissions": ["email:read"],
+  "permissions": [
+    "email:read"
+  ],
   "entrypoint": "index.js",
   "minAppVersion": "1.7.0",
   "icon": "media/icon.svg",
@@ -14,7 +16,7 @@
     "size": {
       "type": "number",
       "label": "Image size (px)",
-      "description": "Size of the Gravatar image in pixels (16–512)",
+      "description": "Size of the Gravatar image in pixels (16\u2013512)",
       "default": 160,
       "min": 16,
       "max": 512
@@ -23,14 +25,27 @@
       "type": "select",
       "label": "Maximum content rating",
       "description": "Gravatar images above this rating will not be shown",
-      "options": ["g", "pg", "r", "x"],
+      "options": [
+        "g",
+        "pg",
+        "r",
+        "x"
+      ],
       "default": "g"
     },
     "defaultStyle": {
       "type": "select",
       "label": "Fallback style",
       "description": "Image style when an email has no Gravatar profile. '404' lets the host show its own fallback (initials / favicon).",
-      "options": ["404", "mp", "identicon", "monsterid", "wavatar", "retro", "robohash"],
+      "options": [
+        "404",
+        "mp",
+        "identicon",
+        "monsterid",
+        "wavatar",
+        "retro",
+        "robohash"
+      ],
       "default": "404"
     }
   }

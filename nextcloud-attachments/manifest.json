@@ -1,7 +1,7 @@
 {
   "id": "nextcloud-attachments",
   "name": "Nextcloud Attachments",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "author": "Bulwark Mail Community",
   "description": "Attach large files via a Nextcloud share link instead of as binary attachments. Each user authenticates with their own Nextcloud app password; files are uploaded over WebDAV and a public share link is appended to the outgoing message at send time.",
   "type": "ui-extension",
@@ -34,7 +34,7 @@
     "ncAppPassword": {
       "type": "string",
       "label": "Nextcloud app password",
-      "description": "Generate one in Nextcloud → Settings → Security → Devices & sessions. Stored unencrypted in this browser; do not share this profile.",
+      "description": "Generate one in Nextcloud \u2192 Settings \u2192 Security \u2192 Devices & sessions. Stored unencrypted in this browser; do not share this profile.",
       "default": ""
     },
     "ncBaseFolder": {
@@ -48,7 +48,11 @@
       "label": "Folder layout",
       "description": "How uploads are organised inside the upload folder.",
       "default": "date",
-      "options": ["flat", "date", "hash"]
+      "options": [
+        "flat",
+        "date",
+        "hash"
+      ]
     },
     "expiryDays": {
       "type": "number",

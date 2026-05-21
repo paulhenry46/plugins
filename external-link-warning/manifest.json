@@ -1,11 +1,13 @@
 {
   "id": "external-link-warning",
   "name": "External Link Warning",
-  "version": "1.1.1",
+  "version": "1.2.1",
   "author": "Bulwark Mail Community",
   "description": "Warns before opening external links to unknown domains. Admins can pre-populate a trusted domain list.",
   "type": "hook",
-  "permissions": ["admin:config"],
+  "permissions": [
+    "admin:config"
+  ],
   "entrypoint": "index.js",
   "minAppVersion": "1.7.0",
   "icon": "media/icon.svg",
@@ -34,7 +36,7 @@
     },
     "rememberLocalChoices": {
       "type": "boolean",
-      "label": "Allow “Always trust” checkbox",
+      "label": "Allow \u201cAlways trust\u201d checkbox",
       "description": "When enabled, the warning dialog includes a checkbox that permanently trusts the domain on this device.",
       "default": true
     }

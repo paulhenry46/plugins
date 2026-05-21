@@ -1,7 +1,7 @@
 {
   "id": "external-mail-warning",
   "name": "External Mail Warning",
-  "version": "1.2.1",
+  "version": "1.3.1",
   "author": "Bulwark Mail Community",
   "description": "Warns before sending email to recipients outside your safe-domain list, and flags incoming messages from external senders with a banner. Admins can pre-populate organisation-wide safe domains.",
   "type": "hook",
@@ -52,7 +52,7 @@
     "warnOnAuthFailure": {
       "type": "boolean",
       "label": "Banner on failed authentication (SPF, DKIM, DMARC, reverse DNS)",
-      "description": "Also show the banner when the message's Authentication-Results header reports a failure — even if the sender's domain is on your safe list. Strong signal of spoofing.",
+      "description": "Also show the banner when the message's Authentication-Results header reports a failure \u2014 even if the sender's domain is on your safe list. Strong signal of spoofing.",
       "default": true
     },
     "notifyOnIncomingExternal": {

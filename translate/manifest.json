@@ -1,14 +1,20 @@
 {
   "id": "translate",
   "name": "Translate",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "author": "Bulwark Mail Community",
   "description": "Translate received emails into your preferred language using a free public translation API (MyMemory by default, LibreTranslate optional).",
   "type": "ui-extension",
-  "permissions": ["email:read", "ui:email-banner", "http:post"],
+  "permissions": [
+    "email:read",
+    "ui:email-banner",
+    "http:post"
+  ],
   "entrypoint": "index.js",
   "minAppVersion": "1.7.0",
-  "apiPostPaths": ["/api/translate"],
+  "apiPostPaths": [
+    "/api/translate"
+  ],
   "settingsSchema": {
     "targetLanguage": {
       "type": "select",
@@ -16,7 +22,31 @@
       "description": "BCP-47 code of the language to translate received emails into.",
       "default": "en",
       "options": [
-        "en", "de", "fr", "es", "it", "pt", "nl", "pl", "ru", "uk", "tr", "sv", "no", "da", "fi", "cs", "el", "ro", "hu", "ja", "ko", "zh", "ar", "he", "hi"
+        "en",
+        "de",
+        "fr",
+        "es",
+        "it",
+        "pt",
+        "nl",
+        "pl",
+        "ru",
+        "uk",
+        "tr",
+        "sv",
+        "no",
+        "da",
+        "fi",
+        "cs",
+        "el",
+        "ro",
+        "hu",
+        "ja",
+        "ko",
+        "zh",
+        "ar",
+        "he",
+        "hi"
       ]
     },
     "provider": {
@@ -24,7 +54,10 @@
       "label": "Translation provider",
       "description": "MyMemory works without configuration. LibreTranslate requires the host to be configured with LIBRETRANSLATE_URL (and optionally LIBRETRANSLATE_API_KEY).",
       "default": "mymemory",
-      "options": ["mymemory", "libretranslate"]
+      "options": [
+        "mymemory",
+        "libretranslate"
+      ]
     },
     "autoTranslateForeign": {
       "type": "boolean",
