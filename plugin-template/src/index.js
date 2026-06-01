@@ -57,8 +57,9 @@ function MyWidget(props) {
           font: 'inherit',
           padding: '6px 10px',
           borderRadius: '6px',
-          border: '1px solid #cbd5e1',
-          background: '#f8fafc',
+          border: '1px solid var(--color-input)',
+          background: 'var(--color-muted)',
+          color: 'var(--color-foreground)',
           cursor: 'pointer',
         },
       },
@@ -67,7 +68,7 @@ function MyWidget(props) {
     props?.email
       ? h(
           'div',
-          { style: { marginTop: '8px', color: '#64748b' } },
+          { style: { marginTop: '8px', color: 'var(--color-muted-foreground)' } },
           `Current email: ${props.email.subject || '(no subject)'}`,
         )
       : null,

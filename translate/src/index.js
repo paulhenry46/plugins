@@ -115,112 +115,183 @@ function TranslateBanner(props) {
 
   const showRetry = state.status === 'done' || state.status === 'error' || state.status === 'skipped';
 
-  return h(
+  // Mirror the host's "External Content" / external-sender banner language: a
+  // tinted round icon, a tiny uppercase eyebrow label, a medium body line, and
+  // outline action buttons — all driven by the host theme tokens so the slot
+  // matches light/dark and custom themes.
+  const TINT = 'var(--color-info)';
+  // Mix the info tint into the *opaque* background/card tokens — not into
+  // `transparent`. A slot iframe's body is transparent, so a translucent fill
+  // would reveal whatever sits behind the iframe (often the white email body),
+  // which broke the banner in dark mode. Opaque mixes keep it a solid panel
+  // that follows the host's light/dark/custom theme.
+  const bannerStyle = {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+    padding: '10px 16px',
+    background: `color-mix(in srgb, ${TINT} 10%, var(--color-background))`,
+    borderBottom: `1px solid color-mix(in srgb, ${TINT} 28%, var(--color-background))`,
+    color: 'var(--color-foreground)',
+    fontSize: '13px',
+    lineHeight: 1.5,
+  };
+
+  const iconCircle = h(
+    'div',
+    {
+      'aria-hidden': 'true',
+      style: {
+        width: '40px',
+        height: '40px',
+        borderRadius: '9999px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexShrink: 0,
+        fontSize: '18px',
+        background: `color-mix(in srgb, ${TINT} 22%, var(--color-background))`,
+        color: TINT,
+      },
+    },
+    '🌐',
+  );
+
+  const label = h(
     'div',
     {
       style: {
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '8px',
-        padding: '10px 12px',
-        margin: '8px 0',
-        border: '1px solid #e2e8f0',
-        borderRadius: '8px',
-        background: '#f8fafc',
-        fontSize: '13px',
-        lineHeight: 1.5,
+        fontSize: '10px',
+        fontWeight: 600,
+        textTransform: 'uppercase',
+        letterSpacing: '0.06em',
+        color: 'var(--color-muted-foreground)',
       },
     },
+    'Translate',
+  );
+
+  let message;
+  if (state.status === 'idle') {
+    message = `Translate this message into ${target.toUpperCase()}?`;
+  } else if (state.status === 'loading') {
+    message = 'Translating…';
+  } else if (state.status === 'skipped') {
+    message = `This message is already in ${target.toUpperCase()}.`;
+  } else if (state.status === 'done') {
+    message = `Translated from ${state.detected ? String(state.detected).toUpperCase() : 'auto'} to ${target.toUpperCase()}${state.truncated ? ' · long message truncated' : ''}`;
+  } else if (state.status === 'error') {
+    message = state.error;
+  }
+
+  const messageEl = h(
+    'div',
+    {
+      style: {
+        fontSize: '14px',
+        fontWeight: 500,
+        wordBreak: 'break-word',
+        color: state.status === 'error' ? 'var(--color-destructive)' : 'var(--color-foreground)',
+      },
+    },
+    message,
+  );
+
+  // Shared outline-button style — matches the host banner's secondary actions.
+  const outlineButton = (extra) => ({
+    font: 'inherit',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '6px',
+    minHeight: '36px',
+    padding: '6px 12px',
+    borderRadius: '6px',
+    fontSize: '13px',
+    fontWeight: 500,
+    cursor: 'pointer',
+    border: '1px solid var(--color-border)',
+    background: 'transparent',
+    color: 'var(--color-muted-foreground)',
+    ...extra,
+  });
+
+  const actions = [];
+  if (state.status === 'idle') {
+    actions.push(
+      h(
+        'button',
+        {
+          key: 'go',
+          type: 'button',
+          onClick: run,
+          style: outlineButton(),
+        },
+        '🌐 Translate',
+      ),
+    );
+  } else if (state.status === 'loading') {
+    actions.push(
+      h(
+        'button',
+        {
+          key: 'loading',
+          type: 'button',
+          disabled: true,
+          style: outlineButton({ cursor: 'progress', opacity: 0.6 }),
+        },
+        'Translating…',
+      ),
+    );
+  } else if (showRetry) {
+    actions.push(
+      h(
+        'button',
+        {
+          key: 'retry',
+          type: 'button',
+          onClick: run,
+          style: outlineButton(),
+        },
+        '↻ Translate again',
+      ),
+    );
+  }
+
+  return h(
+    'div',
+    { role: 'note', style: bannerStyle },
     h(
       'div',
-      { style: { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' } },
-      h('span', { 'aria-hidden': 'true' }, '🌐'),
+      { style: { display: 'flex', alignItems: 'flex-start', gap: '12px' } },
+      iconCircle,
       h(
         'div',
-        { style: { flex: 1, minWidth: 0 } },
-        state.status === 'idle' && `Translate this message into ${target.toUpperCase()}?`,
-        state.status === 'loading' && 'Translating…',
-        state.status === 'skipped' && `Already in ${target.toUpperCase()}`,
-        state.status === 'done' &&
+        { style: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '8px' } },
+        h(
+          'div',
+          { style: { display: 'flex', flexDirection: 'column', gap: '2px' } },
+          label,
+          messageEl,
+        ),
+        actions.length > 0 &&
           h(
-            'span',
-            { style: { fontSize: '12px', opacity: 0.75 } },
-            `Translated from ${state.detected ? String(state.detected).toUpperCase() : 'auto'} to ${target.toUpperCase()}`,
-            state.truncated ? ' · long message truncated' : '',
+            'div',
+            { style: { display: 'flex', flexWrap: 'wrap', gap: '6px' } },
+            actions,
           ),
-        state.status === 'error' &&
-          h('span', { style: { color: '#b91c1c', fontSize: '12px' } }, state.error),
       ),
-      state.status === 'idle' &&
-        h(
-          'button',
-          {
-            type: 'button',
-            onClick: run,
-            style: {
-              font: 'inherit',
-              padding: '5px 12px',
-              borderRadius: '6px',
-              fontSize: '12px',
-              fontWeight: 500,
-              cursor: 'pointer',
-              border: '1px solid transparent',
-              background: '#3b82f6',
-              color: '#ffffff',
-            },
-          },
-          'Translate',
-        ),
-      state.status === 'loading' &&
-        h(
-          'button',
-          {
-            type: 'button',
-            disabled: true,
-            style: {
-              font: 'inherit',
-              padding: '5px 12px',
-              borderRadius: '6px',
-              fontSize: '12px',
-              fontWeight: 500,
-              cursor: 'progress',
-              border: '1px solid transparent',
-              background: '#3b82f6',
-              color: '#ffffff',
-              opacity: 0.6,
-            },
-          },
-          'Translating…',
-        ),
-      showRetry &&
-        h(
-          'button',
-          {
-            type: 'button',
-            onClick: run,
-            style: {
-              font: 'inherit',
-              padding: '5px 12px',
-              borderRadius: '6px',
-              fontSize: '12px',
-              fontWeight: 500,
-              cursor: 'pointer',
-              border: '1px solid #e2e8f0',
-              background: '#ffffff',
-            },
-          },
-          'Translate again',
-        ),
     ),
     state.status === 'done' &&
       h(
         'div',
         {
           style: {
-            borderTop: '1px dashed #e2e8f0',
-            paddingTop: '8px',
+            borderTop: '1px dashed color-mix(in srgb, var(--color-foreground) 22%, var(--color-background))',
+            paddingTop: '10px',
             whiteSpace: 'pre-wrap',
             wordWrap: 'break-word',
+            fontSize: '14px',
+            color: 'var(--color-foreground)',
           },
         },
         state.translated,

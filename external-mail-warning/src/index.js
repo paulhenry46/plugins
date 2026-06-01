@@ -258,7 +258,7 @@ function ExternalSenderBanner(props) {
         padding: '10px 24px',
         background: 'rgba(245, 158, 11, 0.12)',
         borderBottom: '1px solid rgba(245, 158, 11, 0.25)',
-        color: '#92400e',
+        color: 'var(--color-foreground)',
       },
     },
     h(
@@ -269,7 +269,7 @@ function ExternalSenderBanner(props) {
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           flexShrink: 0,
           background: 'rgba(245, 158, 11, 0.25)',
-          color: '#b45309',
+          color: 'var(--color-warning)',
           fontWeight: 700,
         },
         'aria-hidden': 'true',

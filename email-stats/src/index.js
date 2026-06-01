@@ -64,7 +64,7 @@ function StatsWidget() {
         padding: '2px 0',
       },
     },
-    h('span', { style: { color: '#64748b' } }, label),
+    h('span', { style: { color: 'var(--color-muted-foreground)' } }, label),
     h('span', { style: { fontWeight: 600, fontVariantNumeric: 'tabular-nums' } }, value),
   );
 
@@ -77,7 +77,7 @@ function StatsWidget() {
       `Email Stats — ${today}`,
     ),
     !loaded
-      ? h('div', { style: { color: '#94a3b8' } }, 'Loading…')
+      ? h('div', { style: { color: 'var(--color-muted-foreground)' } }, 'Loading…')
       : h(
           'div',
           null,

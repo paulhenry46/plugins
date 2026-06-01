@@ -23,8 +23,8 @@ function NoteBanner() {
     {
       style: {
         padding: '6px 12px',
-        background: '#eef2ff',
-        color: '#3730a3',
+        background: 'var(--color-accent)',
+        color: 'var(--color-accent-foreground)',
         fontSize: '12px',
         display: 'flex',
         alignItems: 'center',
@@ -122,7 +122,7 @@ function NotesSidebar(props) {
   if (!emailId) {
     return h(
       'div',
-      { style: { padding: '12px', fontSize: '13px', color: '#64748b' } },
+      { style: { padding: '12px', fontSize: '13px', color: 'var(--color-muted-foreground)' } },
       h('div', { style: { fontWeight: 600, marginBottom: '4px' } }, 'Quick Notes'),
       'Open an email to add a note.',
     );
@@ -153,7 +153,7 @@ function NotesSidebar(props) {
       savedAt
         ? h(
             'span',
-            { style: { fontSize: '11px', color: '#94a3b8', fontWeight: 400 } },
+            { style: { fontSize: '11px', color: 'var(--color-muted-foreground)', fontWeight: 400 } },
             `saved ${new Date(savedAt).toLocaleTimeString()}`,
           )
         : null,
@@ -169,15 +169,15 @@ function NotesSidebar(props) {
         font: 'inherit',
         padding: '8px',
         borderRadius: '6px',
-        border: '1px solid #cbd5e1',
+        border: '1px solid var(--color-input)',
         resize: 'vertical',
-        background: '#ffffff',
-        color: '#0f172a',
+        background: 'var(--color-background)',
+        color: 'var(--color-foreground)',
       },
     }),
     h(
       'div',
-      { style: { fontSize: '11px', color: '#94a3b8' } },
+      { style: { fontSize: '11px', color: 'var(--color-muted-foreground)' } },
       'Notes auto-save half a second after you stop typing.',
     ),
   );
