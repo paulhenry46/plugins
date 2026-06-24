@@ -6,7 +6,7 @@
   "scripts": {
     "build": "esbuild src/index.js --bundle --format=cjs --platform=neutral --charset=utf8 --outfile=dist/index.js --external:react --external:react-dom --external:react-dom/client --external:react/jsx-runtime",
     "dev": "esbuild src/index.js --bundle --format=cjs --platform=neutral --charset=utf8 --outfile=dist/index.js --external:react --external:react-dom --external:react-dom/client --external:react/jsx-runtime --watch",
-    "package": "npm run build && cp manifest.json dist/ && cd dist && tar -acf ../outlook-style-headers.zip manifest.json index.js"
+    "package": "npm run build && cp manifest.json dist/ && cd dist && zip -X ../outlook-style-headers.zip manifest.json index.js"
   },
   "devDependencies": {
     "esbuild": "^0.24.0"
