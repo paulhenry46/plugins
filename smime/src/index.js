@@ -63,6 +63,40 @@ function useAes128() {
   return settings().encryptionStrength === 'aes-128';
 }
 
+// ─── Privileged-tier capability probe ─────────────────────────────────
+// S/MIME needs in-frame `crypto.subtle` + IndexedDB, which exist only in the
+// privileged (same-origin) tier. In the untrusted (null-origin) sandbox,
+// `indexedDB.open` throws "The operation is insecure" and `crypto.subtle` is
+// absent. We probe once and degrade with a clear message instead of letting a
+// raw IndexedDB error crash activate() (which would trip the circuit breaker).
+
+const NOT_PRIVILEGED_MSG =
+  'S/MIME could not start: it is running in the restricted (untrusted) plugin ' +
+  'sandbox, where in-browser cryptography and key storage are unavailable. ' +
+  'This plugin must be delivered as a signed, admin-approved bundle with ' +
+  '"tier": "privileged" so it loads in the same-origin tier. Contact your ' +
+  'administrator.';
+
+let _capable = null;
+async function isCapable() {
+  if (_capable !== null) return _capable;
+  try {
+    if (typeof indexedDB === 'undefined' || !(crypto && crypto.subtle)) throw new Error('missing apis');
+    await new Promise((resolve, reject) => {
+      let req;
+      try { req = indexedDB.open('smime-capability-probe'); }
+      catch (e) { reject(e); return; }
+      req.onsuccess = () => { try { req.result.close(); } catch { /* ignore */ } resolve(); };
+      req.onerror = () => reject(req.error || new Error('indexedDB open failed'));
+      req.onblocked = () => resolve();
+    });
+    _capable = true;
+  } catch {
+    _capable = false;
+  }
+  return _capable;
+}
+
 // ─── Address helpers ──────────────────────────────────────────────────
 
 function parseAddr(value) {
@@ -186,6 +220,11 @@ async function onComposeSend(req) {
 
   const { sign, encrypt } = await resolveIntent(req);
   if (!sign && !encrypt) return undefined; // not our job — host sends normally
+
+  if (!(await isCapable())) {
+    host.toast.error('Cannot sign/encrypt: S/MIME is not running in the privileged tier.');
+    return false; // refuse rather than send plaintext when sign/encrypt was requested
+  }
 
   try {
     const identityId = req.identityId || req.identity || '';
@@ -319,6 +358,7 @@ async function persistVerifyStatus(emailId, status) {
 
 async function onRenderEmailBody(body, ctx) {
   if (!ctx) return undefined;
+  if (!(await isCapable())) return undefined; // can't decrypt/verify without the privileged tier
 
   const detection = detectSmime(ctx.contentType, ctx.bodyStructure, ctx.attachments);
   if (!detection.type) return undefined;
@@ -476,14 +516,17 @@ function ComposerToolbar() {
 
   useEffect(() => {
     (async () => {
-      const stored = (await host.storage.get(INTENT_KEY)) || {};
-      const prefs = await getPrefs();
-      setIntent({
-        sign: typeof stored.sign === 'boolean' ? stored.sign : prefs.defaultSign,
-        encrypt: typeof stored.encrypt === 'boolean' ? stored.encrypt : prefs.defaultEncrypt,
-      });
-      const recs = await listKeyRecords();
-      setReady(recs.length > 0);
+      try {
+        if (!(await isCapable())) { setReady(false); return; }
+        const stored = (await host.storage.get(INTENT_KEY)) || {};
+        const prefs = await getPrefs();
+        setIntent({
+          sign: typeof stored.sign === 'boolean' ? stored.sign : prefs.defaultSign,
+          encrypt: typeof stored.encrypt === 'boolean' ? stored.encrypt : prefs.defaultEncrypt,
+        });
+        const recs = await listKeyRecords();
+        setReady(recs.length > 0);
+      } catch { setReady(false); }
     })();
   }, []);
 
@@ -603,10 +646,12 @@ function SettingsSection() {
   const [prefs, setPrefsState] = useState(DEFAULT_PREFS);
   const [unlocked, setUnlocked] = useState({}); // id -> bool
   const [busy, setBusy] = useState(false);
+  const [capable, setCapable] = useState(true);
   const fileRef = useRef(null);
   const certFileRef = useRef(null);
 
   const refresh = useCallback(async () => {
+    if (!(await isCapable())) { setCapable(false); return; }
     const [k, c, p] = await Promise.all([listKeyRecords(), listPublicCerts(), getPrefs()]);
     setKeys(k); setCerts(c); setPrefsState(p);
     const u = {};
@@ -615,6 +660,13 @@ function SettingsSection() {
   }, []);
 
   useEffect(() => { void refresh(); }, [refresh]);
+
+  if (!capable) {
+    return h('div', { style: { ...card, borderColor: 'var(--color-destructive, #dc2626)', color: 'var(--color-destructive, #dc2626)', maxWidth: '720px' } },
+      h('div', { style: { fontWeight: 600, marginBottom: '6px' } }, 'S/MIME is not active'),
+      h('div', { style: { fontSize: '13px', lineHeight: 1.5 } }, NOT_PRIVILEGED_MSG),
+    );
+  }
 
   async function importKeyFile() {
     const file = fileRef.current && fileRef.current.files && fileRef.current.files[0];
@@ -812,9 +864,17 @@ export const slots = {
 };
 
 export async function activate(api) {
+  // Bail out gracefully if we're not in the privileged (same-origin) tier — do
+  // NOT throw, or the circuit breaker disables the plugin after a raw IDB error.
+  if (!(await isCapable())) {
+    api.log.error(NOT_PRIVILEGED_MSG);
+    try { api.toast.error('S/MIME needs the privileged tier — see plugin logs / contact your admin.'); } catch { /* ignore */ }
+    return;
+  }
   // Enforce session scope for unlocked keys: wipe any left over from a prior
   // app session at boot (mirrors the native "in-memory, cleared on reload").
   try { await clearSessionKeys(); } catch (err) { api.log.warn('S/MIME: clearSessionKeys failed', err); }
-  const keyCount = (await listKeyRecords()).length;
+  let keyCount = 0;
+  try { keyCount = (await listKeyRecords()).length; } catch (err) { api.log.warn('S/MIME: listKeyRecords failed', err); }
   api.log.info(`S/MIME plugin activated (${keyCount} key${keyCount === 1 ? '' : 's'} imported)`);
 }
