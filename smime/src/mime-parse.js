@@ -13,6 +13,14 @@ export function parseMime(bytes) {
   const node = parseEntity(text);
   const out = { html: '', text: '', attachments: [] };
   collect(node, out);
+  // Fallback for non-MIME inner content (e.g. messages signed/encrypted by
+  // OpenSSL or older clients where the protected payload is raw text with no
+  // Content-Type). If structured parsing produced no renderable body, surface
+  // the decoded bytes as plain text so the message is never shown blank.
+  if (!out.html && !out.text) {
+    const raw = decoder.decode(bytes).trim();
+    if (raw) out.text = raw;
+  }
   return out;
 }
 
