@@ -104,7 +104,12 @@ function parseAddr(value) {
     return { name: value.name || undefined, email: String(value.email) };
   }
   const s = String(value || '');
-  const m = s.match(/^\s*(?:"?([^"<]*?)"?\s*)?<?\s*([^<>\s]+@[^<>\s]+)\s*>?\s*$/);
+  // A leading segment is only a display name when it is actually followed by an
+  // angle-bracketed address. Making the `<` optional (the old `<?`) let the name
+  // group steal the first character of a BARE address — e.g. "root@rbm.systems"
+  // parsed as name "r" + email "oot@rbm.systems", which then failed the S/MIME
+  // key lookup for every normal send.
+  const m = s.match(/^\s*(?:"?([^"<]*?)"?\s*<\s*)?([^<>\s]+@[^<>\s]+)\s*>?\s*$/);
   if (m) return { name: (m[1] || '').trim() || undefined, email: m[2] };
   return { email: s.trim() };
 }
@@ -147,6 +152,36 @@ async function signingKeyRecordForEmail(fromEmail) {
     recs.find((r) => r.email === lower) ||
     undefined
   );
+}
+
+// Ensure a key's private material is unlocked in the session store. If it's
+// locked, ask for the storage passphrase via a host popup and unlock it in
+// place. Returns the unlocked session keys, or null if the user cancels or the
+// passphrase is wrong (a wrong-passphrase toast is shown in the latter case).
+async function ensureKeyUnlocked(keyRecord) {
+  const existing = await getSessionKeys(keyRecord.id);
+  if (existing && existing.signingKey) return existing;
+
+  const answers = await host.ui.prompt({
+    title: 'Unlock S/MIME key',
+    message: `Your key for ${keyRecord.email || 'this identity'} is locked. Enter its storage passphrase to sign and send.`,
+    confirmLabel: 'Unlock & send',
+    fields: [
+      { name: 'pass', label: 'Storage passphrase', type: 'password', required: true },
+    ],
+  });
+  if (!answers) return null; // cancelled
+  const pass = answers.pass || '';
+  if (!pass) return null;
+
+  try {
+    const { signingKey, decryptionKey, legacyDecryptionKey } = await unlockPrivateKey(keyRecord, pass);
+    await saveSessionKeys({ id: keyRecord.id, signingKey, decryptionKey, legacyDecryptionKey });
+    return await getSessionKeys(keyRecord.id);
+  } catch (err) {
+    host.toast.error(err && err.message ? err.message : 'Unlock failed — wrong passphrase?');
+    return null;
+  }
 }
 
 async function recipientCertsFor(emails) {
@@ -260,10 +295,13 @@ async function onComposeSend(req) {
 
     // 1. Sign (opaque). If we'll also encrypt, nest the signed CMS as a MIME entity.
     if (sign) {
-      const session = await getSessionKeys(keyRecord.id);
+      // Locked keys are normally unlocked in onBeforeEmailSend (which can abort
+      // the send cleanly). This is a fallback for that path not having run: the
+      // popup shows here too, but cancelling clears the composer, so prefer the
+      // pre-send hook.
+      const session = await ensureKeyUnlocked(keyRecord);
       if (!session || !session.signingKey) {
-        host.toast.error('Your S/MIME key is locked. Unlock it in Settings → Plugins → S/MIME, then resend.');
-        return false;
+        return false; // refuse rather than send unsigned
       }
       const signedBlob = await smimeSign(
         payloadBytes,
@@ -344,12 +382,31 @@ async function maybeAutoImportSigner(status) {
   }
 }
 
-function statusNoticeHtml(message, tone) {
-  const color = tone === 'error' ? 'var(--color-destructive, #dc2626)'
-    : tone === 'ok' ? 'var(--color-success, #16a34a)'
-      : 'var(--color-muted-foreground, #64748b)';
-  return `<div style="padding:12px;border:1px solid ${color};border-radius:8px;color:${color};font-size:14px;">${message}</div>`;
+// Lucide-style stroke icons rendered inline so the status chip can tint them
+// with `currentColor` — matching the host's "External Content" banner, which
+// uses tinted SVG glyphs (not emoji) in a round chip.
+function iconSvg(size, ...children) {
+  return h('svg', { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' }, ...children);
 }
+const ICONS = {
+  lock: (s = 20) => iconSvg(s,
+    h('rect', { width: 18, height: 11, x: 3, y: 11, rx: 2, ry: 2 }),
+    h('path', { d: 'M7 11V7a5 5 0 0 1 10 0v4' })),
+  lockOpen: (s = 20) => iconSvg(s,
+    h('rect', { width: 18, height: 11, x: 3, y: 11, rx: 2, ry: 2 }),
+    h('path', { d: 'M7 11V7a5 5 0 0 1 9.9-1' })),
+  shieldCheck: (s = 20) => iconSvg(s,
+    h('path', { d: 'M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z' }),
+    h('path', { d: 'm9 12 2 2 4-4' })),
+  shieldAlert: (s = 20) => iconSvg(s,
+    h('path', { d: 'M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z' }),
+    h('path', { d: 'M12 8v4' }),
+    h('path', { d: 'M12 16h.01' })),
+  info: (s = 20) => iconSvg(s,
+    h('circle', { cx: 12, cy: 12, r: 10 }),
+    h('path', { d: 'M12 16v-4' }),
+    h('path', { d: 'M12 8h.01' })),
+};
 
 async function persistVerifyStatus(emailId, status) {
   if (!emailId) return;
@@ -388,28 +445,18 @@ async function onRenderEmailBody(body, ctx) {
       try {
         result = await smimeDecrypt({ cmsBytes: der, keyRecords, unlockedKeys, legacyUnlockedKeys });
       } catch (err) {
+        // Single-banner UX: on failure we surface the status ONLY through the
+        // email-banner slot (which reads the persisted verification), and leave
+        // the body empty rather than stacking a second in-body notice box.
         if (err instanceof SmimeKeyLockedError) {
           const status = { isEncrypted: true, decryptionSuccess: false, decryptionError: 'locked' };
           await persistVerifyStatus(ctx.id, status);
-          return {
-            ...body,
-            handledBy: 'smime',
-            html: statusNoticeHtml('🔒 This message is encrypted. Unlock your S/MIME key in Settings → Plugins → S/MIME to read it.', 'muted'),
-            text: 'This message is encrypted. Unlock your S/MIME key to read it.',
-            attachments: [],
-            verification: status,
-          };
+          return { ...body, handledBy: 'smime', html: '', text: '', attachments: [], verification: status };
         }
+        host.log.warn('S/MIME decrypt failed', err);
         const status = { isEncrypted: true, decryptionSuccess: false, decryptionError: err && err.message ? err.message : String(err) };
         await persistVerifyStatus(ctx.id, status);
-        return {
-          ...body,
-          handledBy: 'smime',
-          html: statusNoticeHtml(`🔒 Could not decrypt this message: ${status.decryptionError}`, 'error'),
-          text: `Could not decrypt this message: ${status.decryptionError}`,
-          attachments: [],
-          verification: status,
-        };
+        return { ...body, handledBy: 'smime', html: '', text: '', attachments: [], verification: status };
       }
 
       // Decrypted inner content may itself be a signed CMS — either nested as a
@@ -571,6 +618,45 @@ function EmailBanner(props) {
   const email = props && props.email;
   const [status, setStatus] = useState(null);
   const [loaded, setLoaded] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  // "Unlock now" action for the locked-encryption banner: unlock any locked key
+  // (prompting for the storage passphrase), then ask the host to re-run the
+  // render hook so the body decrypts in place — no reload (which would wipe the
+  // just-unlocked in-memory keys).
+  const unlockNow = useCallback(async () => {
+    setBusy(true);
+    try {
+      const recs = await listKeyRecords();
+      const locked = [];
+      for (const r of recs) {
+        const s = await getSessionKeys(r.id);
+        if (!(s && s.decryptionKey)) locked.push(r);
+      }
+      let unlockedAny = false;
+      for (const rec of locked) {
+        const s = await ensureKeyUnlocked(rec);
+        if (s && s.decryptionKey) unlockedAny = true;
+        else break; // cancelled or wrong passphrase — stop prompting
+      }
+      if (!unlockedAny) return;
+
+      await host.ui.rerenderEmail();
+      // The re-decrypt runs in the background instance and rewrites the persisted
+      // verify status. This banner only read storage once on mount, so poll for
+      // the fresh status (until it's no longer 'locked') and update in place.
+      if (email && email.id) {
+        for (let i = 0; i < 20; i++) {
+          await new Promise((resolve) => setTimeout(resolve, 150));
+          let next = null;
+          try { next = await host.storage.get(VERIFY_PREFIX + email.id); } catch { /* ignore */ }
+          if (next && next.decryptionError !== 'locked') { setStatus(next); break; }
+        }
+      }
+    } finally {
+      setBusy(false);
+    }
+  }, [email]);
 
   useEffect(() => {
     let alive = true;
@@ -596,45 +682,85 @@ function EmailBanner(props) {
   const warnSelfSigned = settings().warnOnSelfSigned !== false;
 
   if (status.isEncrypted) {
-    if (status.decryptionSuccess) rows.push(['🔓', 'Decrypted', 'ok']);
-    else if (status.decryptionError === 'locked') rows.push(['🔒', 'Encrypted — unlock your key to read', 'warn']);
-    else if (status.decryptionError) rows.push(['🔒', `Encrypted — ${status.decryptionError}`, 'error']);
-    else rows.push(['🔒', 'Encrypted message', 'muted']);
+    if (status.decryptionSuccess) rows.push({ icon: 'lockOpen', eyebrow: 'Encryption', text: 'Decrypted', tone: 'success' });
+    else if (status.decryptionError === 'locked') rows.push({ icon: 'lock', eyebrow: 'Encryption', text: 'Encrypted — unlock your key to read', tone: 'warning', action: 'unlock' });
+    else if (status.decryptionError) rows.push({ icon: 'lock', eyebrow: 'Encryption', text: 'Encrypted — couldn’t be decrypted with your keys', tone: 'destructive' });
+    else rows.push({ icon: 'lock', eyebrow: 'Encryption', text: 'Encrypted message', tone: 'info' });
   }
   if (status.isSigned || status.signerCert) {
     if (status.signatureValid) {
       const who = status.signerCert && status.signerCert.email ? ` by ${status.signerCert.email}` : '';
-      const mismatch = status.signerEmailMatch === false ? ' ⚠ signer ≠ From' : '';
-      const ss = warnSelfSigned && status.selfSigned ? ' (self-signed)' : '';
-      rows.push(['🛡️', `Signature valid${who}${ss}${mismatch}`, status.signerEmailMatch === false ? 'warn' : 'ok']);
+      const mismatch = status.signerEmailMatch === false ? ' · signer ≠ From' : '';
+      const selfSigned = warnSelfSigned && status.selfSigned;
+      const ss = selfSigned ? ' · self-signed' : '';
+      // A valid signature only reads as trusted-green when it also chains to a
+      // CA and the signer matches the From. A self-signed cert or a signer≠From
+      // mismatch downgrades to an amber warning (still "valid", just untrusted).
+      const untrusted = status.signerEmailMatch === false || selfSigned;
+      rows.push({
+        icon: untrusted ? 'shieldAlert' : 'shieldCheck',
+        eyebrow: 'Signature',
+        text: `Valid signature${who}${ss}${mismatch}`,
+        tone: untrusted ? 'warning' : 'success',
+      });
     } else if (status.signatureError) {
-      rows.push(['⚠️', `Signature invalid: ${status.signatureError}`, 'error']);
+      rows.push({ icon: 'shieldAlert', eyebrow: 'Signature', text: `Invalid signature: ${status.signatureError}`, tone: 'destructive' });
     } else {
-      rows.push(['✍️', 'Signed message', 'muted']);
+      rows.push({ icon: 'shieldCheck', eyebrow: 'Signature', text: 'Signed message', tone: 'info' });
     }
   }
-  if (status.unsupportedReason) rows.push(['ℹ️', status.unsupportedReason, 'muted']);
+  if (status.unsupportedReason) rows.push({ icon: 'info', eyebrow: 'S/MIME', text: status.unsupportedReason, tone: 'info' });
 
   if (rows.length === 0) return null;
 
-  const toneColor = (tone) => tone === 'ok' ? 'var(--color-success, #16a34a)'
-    : tone === 'error' ? 'var(--color-destructive, #dc2626)'
-      : tone === 'warn' ? 'var(--color-warning, #d97706)'
-        : 'var(--color-muted-foreground, #64748b)';
+  const toneColor = (tone) => tone === 'success' ? 'var(--color-success, #16a34a)'
+    : tone === 'destructive' ? 'var(--color-destructive, #dc2626)'
+      : tone === 'warning' ? 'var(--color-warning, #d97706)'
+        : 'var(--color-info, #0284c7)';
 
-  return h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', margin: '4px 0' } },
-    rows.map(([icon, text, tone], i) =>
-      h('div', {
-        key: i,
-        style: {
-          display: 'flex', gap: '8px', alignItems: 'center',
-          padding: '6px 10px', borderRadius: '6px', fontSize: '13px',
-          border: `1px solid ${toneColor(tone)}`,
-          color: toneColor(tone),
-          background: 'var(--color-muted, rgba(100,116,139,0.06))',
-        },
-      }, h('span', null, icon), h('span', null, text)),
-    ),
+  // Mirror the host's "External Content" banner: a full-width bg-muted/30 strip
+  // with a bottom border, each status as a round tinted icon chip + uppercase
+  // eyebrow + foreground message.
+  return h('div', {
+    style: {
+      background: 'color-mix(in srgb, var(--color-muted, #f1f5f9) 30%, transparent)',
+      borderBottom: '1px solid var(--color-border, #e2e8f0)',
+      padding: '6px 24px',
+      display: 'flex', flexDirection: 'column', gap: '4px',
+    },
+  },
+    rows.map((r, i) => {
+      const color = toneColor(r.tone);
+      return h('div', { key: i, style: { display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '4px 0' } },
+        h('div', {
+          style: {
+            width: '40px', height: '40px', borderRadius: '9999px', flexShrink: 0,
+            background: `color-mix(in srgb, ${color} 15%, transparent)`,
+            color,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+          },
+        }, ICONS[r.icon]()),
+        h('div', { style: { flex: 1, minWidth: 0 } },
+          h('div', { style: { fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-muted-foreground, #64748b)' } }, r.eyebrow),
+          h('div', { style: { fontSize: '14px', fontWeight: 500, color: 'var(--color-foreground, #0f172a)', overflowWrap: 'break-word' } }, r.text),
+          r.action === 'unlock' && h('div', { style: { marginTop: '8px' } },
+            h('button', {
+              type: 'button',
+              disabled: busy,
+              onClick: unlockNow,
+              style: {
+                display: 'inline-flex', alignItems: 'center', gap: '6px',
+                fontSize: '13px', padding: '6px 12px', borderRadius: '8px', minHeight: '34px',
+                border: '1px solid var(--color-border, #e2e8f0)',
+                background: 'transparent', color: 'var(--color-foreground, #0f172a)',
+                cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.6 : 1,
+              },
+            }, ICONS.lockOpen(15), busy ? 'Unlocking…' : 'Unlock now'),
+          ),
+        ),
+      );
+    }),
   );
 }
 
@@ -671,9 +797,18 @@ function SettingsSection() {
   async function importKeyFile() {
     const file = fileRef.current && fileRef.current.files && fileRef.current.files[0];
     if (!file) return;
-    const p12pass = window.prompt('Passphrase that protects the .p12/.pfx file:');
-    if (p12pass === null) return;
-    const storagePass = window.prompt('Choose a passphrase to protect this key in your browser:');
+    const answers = await host.ui.prompt({
+      title: 'Import S/MIME key',
+      message: `Importing "${file.name}".`,
+      confirmLabel: 'Import',
+      fields: [
+        { name: 'p12pass', label: 'Passphrase protecting the .p12/.pfx file', type: 'password', placeholder: 'Leave blank if the file has none' },
+        { name: 'storagePass', label: 'New passphrase to protect this key in your browser', type: 'password', required: true },
+      ],
+    });
+    if (!answers) return; // cancelled
+    const p12pass = answers.p12pass || '';
+    const storagePass = answers.storagePass || '';
     if (!storagePass) { host.toast.error('A storage passphrase is required'); return; }
     setBusy(true);
     try {
@@ -691,7 +826,15 @@ function SettingsSection() {
   }
 
   async function unlock(rec) {
-    const pass = window.prompt(`Passphrase for ${rec.email || 'this key'}:`);
+    const answers = await host.ui.prompt({
+      title: `Unlock ${rec.email || 'S/MIME key'}`,
+      confirmLabel: 'Unlock',
+      fields: [
+        { name: 'pass', label: 'Storage passphrase for this key', type: 'password', required: true },
+      ],
+    });
+    if (!answers) return; // cancelled
+    const pass = answers.pass || '';
     if (!pass) return;
     setBusy(true);
     try {
@@ -843,7 +986,39 @@ function SettingsSection() {
 
 // ─── Exports ───────────────────────────────────────────────────────────
 
+// Before a send commits: if the user is signing but their key is locked,
+// prompt to unlock it here rather than failing mid-send in onComposeSend.
+// Returning false aborts the send cleanly — the draft and open composer are
+// preserved — so a cancelled unlock never loses the message.
+async function onBeforeEmailSend(email) {
+  try {
+    if (!email || typeof email !== 'object') return true;
+    if (!(await isCapable())) return true;
+    // Resolve the sign intent the way onComposeSend does: the composer-toolbar
+    // slot's stored intent, falling back to prefs. (Encrypt needs no private key.)
+    const stored = (await host.storage.get(INTENT_KEY)) || {};
+    const prefs = await getPrefs();
+    const sign = typeof stored.sign === 'boolean' ? stored.sign : prefs.defaultSign;
+    if (!sign) return true;
+
+    const from = parseAddr(email.fromEmail || email.from || '');
+    if (!from.email) return true;
+    const keyRecord = await signingKeyRecordForEmail(from.email);
+    if (!keyRecord) return true; // onComposeSend surfaces the "no key" message
+
+    const session = await getSessionKeys(keyRecord.id);
+    if (session && session.signingKey) return true; // already unlocked
+
+    const unlocked = await ensureKeyUnlocked(keyRecord);
+    return !!(unlocked && unlocked.signingKey); // false → cancelled/failed → abort send
+  } catch (err) {
+    host.log.warn('onBeforeEmailSend unlock check failed', err);
+    return true; // never block a send on an unexpected error here
+  }
+}
+
 export const hooks = {
+  onBeforeEmailSend,
   onComposeSend,
   onRenderEmailBody,
   // Wipe unlocked keys from the shared session store on sign-out / account switch.

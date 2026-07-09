@@ -183,9 +183,14 @@ export function wrapCmsAsSmimeMessage(cmsBlob, input) {
   lines.push(`Content-Type: application/pkcs7-mime; smime-type=${input.smimeType}; name="smime.p7m"`);
   lines.push('Content-Transfer-Encoding: base64');
   lines.push('Content-Disposition: attachment; filename="smime.p7m"');
-  lines.push('');
 
-  const headerBytes = new TextEncoder().encode(lines.join(CRLF));
+  // Terminate the header block with a BLANK LINE (CRLFCRLF) before the base64
+  // body. The body is concatenated as a separate Blob below, so a trailing ''
+  // in `lines` only yields a single CRLF — gluing the CMS onto the last header.
+  // A strict parser (Stalwart/mail-parser) then reads the base64 as malformed
+  // headers and leaves the pkcs7-mime part empty, which surfaces on the
+  // receiving side as "Invalid ASN.1 data - cannot parse CMS envelope".
+  const headerBytes = new TextEncoder().encode(lines.join(CRLF) + CRLF + CRLF);
   return new Blob([headerBytes, cmsToBase64Blob(cmsBlob)], { type: 'message/rfc822' });
 }
 
